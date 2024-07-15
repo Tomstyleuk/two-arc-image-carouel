@@ -18,16 +18,16 @@ class Carousel {
         this.numMeshes = 4; // number of images for each lines
         this.meshSpacing = 1 / this.numMeshes;
         this.imageUrls1 = [
-            './1.webp',
-            './2.webp',
-            './3.webp',
-            './4.webp',
+            './images/1.webp',
+            './images/2.webp',
+            './images/3.webp',
+            './images/4.webp',
         ];
         this.imageUrls2 = [
-            './5.webp',
-            './6.webp',
-            './7.webp',
-            './8.webp',
+            './images/5.webp',
+            './images/6.webp',
+            './images/7.webp',
+            './images/8.webp',
         ];
     }
 
