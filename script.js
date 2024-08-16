@@ -29,6 +29,22 @@ class Carousel {
             './images/7.webp',
             './images/8.webp',
         ];
+
+
+        this.targetT = 0;
+        this.lerpFactor = 0.05;
+        this.scrollSpeed = 0.0002;
+        this.mobileScrollSpeed = 0.0006;
+        this.isScrolling = false;
+        this.touchStartY = 0;
+        this.lastFrameTime = 0;
+        this.sensitivityThreshold = 0.00001;
+
+        this.isMobile = this.detectMobile();
+    }
+
+    detectMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
 
     async init() {
@@ -76,21 +92,36 @@ class Carousel {
 
     async createCurves() {
         // Creating Arc
-        this.curve1 = new THREE.CubicBezierCurve3(
-            new THREE.Vector3(-1.5, 0, -3),
-            new THREE.Vector3(-0.5, 0, -1),
-            new THREE.Vector3(-0.5, 0, 1),
-            new THREE.Vector3(-3.5, 0, 2)
-        );
+        this.curve1 = this.isMobile ? new THREE.CubicBezierCurve3(
+            new THREE.Vector3(-1.0, 0, -3),
+            new THREE.Vector3(-0.0, 0, -1),
+            new THREE.Vector3(-0.0, 0, 1),
+            new THREE.Vector3(-3.0, 0, 2)
+        )
+            : new THREE.CubicBezierCurve3(
+                new THREE.Vector3(-1.5, 0, -3),
+                new THREE.Vector3(-0.5, 0, -1),
+                new THREE.Vector3(-0.5, 0, 1),
+                new THREE.Vector3(-3.5, 0, 2)
+            );
 
-        this.curve2 = new THREE.CubicBezierCurve3(
-            new THREE.Vector3(1.5, 0, -3),
-            new THREE.Vector3(0.5, 0, -1),
-            new THREE.Vector3(0.5, 0, 1),
-            new THREE.Vector3(3.5, 0, 2)
-        );
+        this.curve2 = this.isMobile ? new THREE.CubicBezierCurve3(
+            new THREE.Vector3(1.2, 0, -3),
+            new THREE.Vector3(0.2, 0, -1),
+            new THREE.Vector3(0.2, 0, 1),
+            new THREE.Vector3(3.2, 0, 2)
+        )
+            : new THREE.CubicBezierCurve3(
+                new THREE.Vector3(1.5, 0, -3),
+                new THREE.Vector3(0.5, 0, -1),
+                new THREE.Vector3(0.5, 0, 1),
+                new THREE.Vector3(3.5, 0, 2)
+            );
 
-        const geometry = new THREE.PlaneGeometry(1.6, 1);
+
+        const geometryWidth = this.isMobile ? 1 : 1.6;
+        const geometryHeight = this.isMobile ? 0.5 : 1;
+        const geometry = new THREE.PlaneGeometry(geometryWidth, geometryHeight);
         const textures1 = await Promise.all(this.imageUrls1.map(url => this.loadTexture(url)));
         const textures2 = await Promise.all(this.imageUrls2.map(url => this.loadTexture(url)));
 
@@ -126,6 +157,7 @@ class Carousel {
     }
 
     updateMeshPositions() {
+        const cameraPosition = this.camera.position;
         for (let i = 0; i < this.numMeshes; i++) {
             const t_offset = (this.t + i * this.meshSpacing) % 1;
 
@@ -147,7 +179,13 @@ class Carousel {
 
     addEventListeners() {
         window.addEventListener('resize', this.onWindowResize.bind(this));
-        window.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
+        // @@@ Updated wheel event listener with passive option
+        window.addEventListener('wheel', this.onWheel.bind(this), { passive: true });
+
+        // @@@ Touch events for mobile
+        window.addEventListener('touchstart', this.onTouchStart.bind(this), { passive: true });
+        window.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: true });
+        window.addEventListener('touchend', this.onTouchEnd.bind(this), { passive: true });
     }
 
     onWindowResize() {
@@ -158,15 +196,63 @@ class Carousel {
     }
 
     onWheel(event) {
-        this.t += event.deltaY * 0.0002;
+        this.targetT -= event.deltaY * this.scrollSpeed; // Reversed direction for natural scrolling
+        this.targetT = ((this.targetT % 1) + 1) % 1;  // targetT is always between 0 and 1
+        this.startScrolling();
+    }
 
-        /**
-         * loop images
-         * this.t value is between 0 - 1
-         */
-        this.t = (this.t + 1) % 1;
+    onTouchStart(event) {
+        this.touchStartY = event.touches[0].clientY;
+    }
+
+    onTouchMove(event) {
+        if (!this.touchStartY) return;
+        const touchY = event.touches[0].clientY;
+        const deltaY = this.touchStartY - touchY;
+        this.targetT += deltaY * this.mobileScrollSpeed;
+        this.targetT = ((this.targetT % 1) + 1) % 1;  // targetT is always between 0 and 1
+        this.touchStartY = touchY;
+        this.startScrolling();
+    }
+
+    startScrolling() {
+        if (!this.isScrolling) {
+            this.isScrolling = true;
+            this.lastFrameTime = performance.now();
+            this.updateCarousel();
+        }
+    }
+
+    onTouchEnd() {
+        this.touchStartY = null;
+    }
+
+    lerp(start, end, factor) {
+        return start + (end - start) * factor;
+    }
+
+    updateCarousel() {
+        const currentTime = performance.now();
+        const deltaTime = (currentTime - this.lastFrameTime) / 16.67; // Normalize to 60fps
+        this.lastFrameTime = currentTime;
+
+        // Calculate the shortest distance between t and targetT considering the circular nature
+        let diff = this.targetT - this.t;
+        diff = ((diff % 1) + 1.5) % 1 - 0.5;  // Normalize difference to range -0.5 to 0.5
+
+        // Apply lerp with delta time
+        this.t += diff * this.lerpFactor * deltaTime;
+
+        // t stays within [0, 1) range
+        this.t = ((this.t % 1) + 1) % 1;
 
         this.updateMeshPositions();
+
+        if (Math.abs(diff) > this.sensitivityThreshold) {
+            requestAnimationFrame(this.updateCarousel.bind(this));
+        } else {
+            this.isScrolling = false;
+        }
     }
 
     animate() {
